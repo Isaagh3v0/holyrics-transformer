@@ -2,4 +2,4 @@
 .env
 /logs
 /dist
-.cache.db
+cache.db
