@@ -87,12 +87,16 @@ func startTextPolling(_ interface{}, lyricsURL, lyricsPort string) {
 
 // cleanTextToArray очищает текст от HTML-тегов и &nbsp;, возвращает массив строк
 func cleanTextToArray(text, textType string) []string {
-	// Удаление HTML-тегов
-	re := regexp.MustCompile(`<[^>]+>`)
-	cleanText := re.ReplaceAllString(text, "")
+	// Сначала удаляем span с id='text-force-update' со всеми возможными вариациями
+	re := regexp.MustCompile(`<span\s+style=['"]visibility:hidden;display:none['"]?\s+id=['"]text-force-update_\d+['"]?\s*>\s*</span>`)
+	text = re.ReplaceAllString(text, "")
+
+	// Более общий подход для удаления HTML-тегов
+	reHTML := regexp.MustCompile(`<[^>]+>`)
+	cleanText := reHTML.ReplaceAllString(text, "")
 
 	// Замена &nbsp; и других специальных символов
-	cleanText = strings.ReplaceAll(cleanText, " ", " ")
+	cleanText = strings.ReplaceAll(cleanText, " ", " ")
 	cleanText = strings.ReplaceAll(cleanText, "&nbsp;", " ")
 
 	// Удаление специфических артефактов, например, (SYN - AZJ08)
