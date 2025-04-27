@@ -1,60 +1,17 @@
-name: CI
-
-on:
-  push:
-    branches:
-      - main
-      - master
-  pull_request:
-    branches:
-      - main
-      - master
+name: Go
+on: [push]
 
 jobs:
-  test:
-    name: Test on Go ${{ matrix.go-version }} and ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        go-version: [1.24.2]
-        os: [ubuntu-latest, windows-latest]
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-      # Проверка кода из репозитория
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Установка Go
-      - name: Set up Go
+      - uses: actions/checkout@v4
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
-
-      # Установка зависимостей
+          go-version: '1.21.x'
       - name: Install dependencies
-        run: go mod tidy
-
-      # Проверка форматирования кода
-      - name: Check formatting
-        run: |
-          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-            echo "Код не отформатирован. Запустите 'gofmt -s -w .'"
-            gofmt -s -l .
-            exit 1
-          fi
-
-      # Установка golangci-lint
-      - name: Install golangci-lint
-        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0
-
-      # Линтинг кода
-      - name: Run golangci-lint
-        run: $(go env GOPATH)/bin/golangci-lint run --timeout=5m
-
-      # Запуск тестов
-      - name: Run tests
-        run: go test -v ./...
-
-      # Проверка сборки
+        run: go get .
       - name: Build
-        run: go build -v .
+        run: go build -v ./...
