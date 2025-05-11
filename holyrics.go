@@ -23,12 +23,29 @@ func startTextPolling(_ interface{}, lyricsURL, lyricsPort string) {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
+	var lastErrorTime time.Time
+	var isConnected bool
+
 	for range ticker.C {
 		url := fmt.Sprintf("http://%s:%s/view/text.json", lyricsURL, lyricsPort)
 		resp, err := http.Get(url)
 		if err != nil {
-			log.Printf("Ошибка при получении текста: %v", err)
+			// Логируем ошибку только раз в 5 секунд
+			if time.Since(lastErrorTime) > 5*time.Second {
+				if !isConnected {
+					log.Printf("Попытка подключения к REST серверу...")
+				} else {
+					log.Printf("Потеряно соединение с REST сервером: %v", err)
+				}
+				lastErrorTime = time.Now()
+			}
+			isConnected = false
 			continue
+		}
+
+		if !isConnected {
+			log.Printf("Успешное подключение к REST серверу")
+			isConnected = true
 		}
 
 		body, err := io.ReadAll(resp.Body)
@@ -53,18 +70,21 @@ func startTextPolling(_ interface{}, lyricsURL, lyricsPort string) {
 		text, _ := mapData["text"].(string)
 		header, _ := mapData["header"].(string)
 		textType, _ := mapData["type"].(string)
+		textType = strings.ToUpper(textType)
+
+		cleanedContent := cleanTextToArray(text, textType)
+		cleanedText := strings.Join(cleanedContent, "\n")
 
 		mutex.Lock()
-		if text != lastText {
-			lastText = text
+		if cleanedText != lastText {
+			lastText = cleanedText
 			lastHeader = header
-			lastType = strings.ToUpper(textType)
+			lastType = textType
 
-			content := cleanTextToArray(text, lastType)
 			payload := map[string]interface{}{
 				"type":    lastType,
 				"header":  lastHeader,
-				"content": content,
+				"content": cleanedContent,
 			}
 
 			// Рассылка всем WebSocket-клиентам
@@ -85,33 +105,30 @@ func startTextPolling(_ interface{}, lyricsURL, lyricsPort string) {
 	}
 }
 
-// cleanTextToArray очищает текст от HTML-тегов и &nbsp;, возвращает массив строк
 func cleanTextToArray(text, textType string) []string {
-	// Сначала удаляем span с id='text-force-update' со всеми возможными вариациями
-	re := regexp.MustCompile(`<span\s+style=['"]visibility:hidden;display:none['"]?\s+id=['"]text-force-update_\d+['"]?\s*>\s*</span>`)
+	re := regexp.MustCompile(`<span[^>]*id=['"]text-force-update_\d+['"][^>]*>.*?</span>`)
 	text = re.ReplaceAllString(text, "")
 
-	// Более общий подход для удаления HTML-тегов
 	reHTML := regexp.MustCompile(`<[^>]+>`)
 	cleanText := reHTML.ReplaceAllString(text, "")
 
-	// Замена &nbsp; и других специальных символов
 	cleanText = strings.ReplaceAll(cleanText, " ", " ")
 	cleanText = strings.ReplaceAll(cleanText, "&nbsp;", " ")
+	cleanText = strings.ReplaceAll(cleanText, "&amp;", "&")
+	cleanText = strings.ReplaceAll(cleanText, "&lt;", "<")
+	cleanText = strings.ReplaceAll(cleanText, "&gt;", ">")
+	cleanText = strings.ReplaceAll(cleanText, "&quot;", "\"")
+	cleanText = strings.ReplaceAll(cleanText, "&#39;", "'")
 
-	// Удаление специфических артефактов, например, (SYN - AZJ08)
 	reArtifact := regexp.MustCompile(`\(SYN - [A-Z0-9]+\)`)
 	cleanText = reArtifact.ReplaceAllString(cleanText, "")
 
-	// Удаление лишних пробелов
 	cleanText = strings.TrimSpace(cleanText)
 
-	// Обработка в зависимости от типа
 	var lines []string
 	if textType == "BIBLE" {
 		lines = processBibleText(cleanText)
 	} else {
-		// Разделение по \n для MUSIC
 		lines = strings.Split(cleanText, "\n")
 		lines = filterEmptyLines(lines)
 	}
@@ -124,7 +141,6 @@ func cleanTextToArray(text, textType string) []string {
 	return lines
 }
 
-// filterEmptyLines удаляет пустые строки
 func filterEmptyLines(lines []string) []string {
 	var result []string
 	for _, line := range lines {

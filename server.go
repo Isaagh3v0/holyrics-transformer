@@ -13,13 +13,13 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Adjust for production (e.g., check specific origins)
+		return true
 	},
 }
 
 var (
-	clients   = make(map[*websocket.Conn]bool) // Connected clients
-	clientsMu sync.Mutex                       // Mutex for thread-safe client management
+	clients   = make(map[*websocket.Conn]bool)
+	clientsMu sync.Mutex
 )
 
 func StartServer() {
@@ -27,7 +27,6 @@ func StartServer() {
 	lyricsURL := GetEnv("LYRICS_URL", "localhost")
 	lyricsPort := GetEnv("LYRICS_PORT", "4747")
 
-	// WebSocket handler
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -35,7 +34,6 @@ func StartServer() {
 			return
 		}
 
-		// Register client
 		clientsMu.Lock()
 		clients[conn] = true
 		clientsMu.Unlock()
@@ -44,10 +42,7 @@ func StartServer() {
 
 		mutex.Lock()
 		if lastText != "" {
-			content := lastText
-			if lastType == "BIBLE" {
-				content = strings.Join(processBibleText(lastText), "\n")
-			}
+			content := strings.Split(lastText, "\n")
 			payload := map[string]interface{}{
 				"type":    lastType,
 				"header":  lastHeader,
@@ -66,7 +61,6 @@ func StartServer() {
 		}
 		mutex.Unlock()
 
-		// Handle client disconnection
 		defer func() {
 			clientsMu.Lock()
 			delete(clients, conn)
@@ -75,7 +69,6 @@ func StartServer() {
 			Info(fmt.Sprintf("Disconnected: %s", conn.RemoteAddr().String()))
 		}()
 
-		// Read messages (optional, can be used for client commands)
 		for {
 			_, _, err := conn.ReadMessage()
 			if err != nil {
@@ -87,10 +80,8 @@ func StartServer() {
 		}
 	})
 
-	// Serve static files
 	http.Handle("/", http.FileServer(http.Dir("./public")))
 
-	// Start text polling
 	go startTextPolling(nil, lyricsURL, lyricsPort)
 
 	Info(fmt.Sprintf("Server is running on port %s...", port))
